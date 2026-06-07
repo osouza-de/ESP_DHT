@@ -14,6 +14,7 @@
 // #define READING_INTERVAL 5 * 60  // Intervalo entre leituras (segundos)
 #define READING_INTERVAL 10
 #define WIFI_CONNECT_TIMEOUT_MS_CUSTOM 15000
+#define WIFI_CONFIG_FILE "/wifi.txt"
 #define TZ_INFO "<-03>3"
 
 ESP8266WiFiMulti wifiMulti;
