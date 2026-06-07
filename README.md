@@ -16,6 +16,7 @@ Create a `secrets.h` file to set the following constants:
 #define INFLUXDB_TOKEN ""
 #define INFLUXDB_ORG ""
 #define INFLUXDB_BUCKET ""
+#define GRAFANA_URL ""
 
 #endif
 ```

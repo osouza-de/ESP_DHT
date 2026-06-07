@@ -45,6 +45,7 @@ bool apConfigUpdateRequested = false;
 unsigned long apConfigUpdateAtMs = 0;
 String currentApSsid = WIFI_AP_SSID;
 String currentApPassword = WIFI_AP_PASSWORD;
+String grafanaURL = GRAFANA_URL;
 bool apModeEnabled = true;
 unsigned long currentReadingIntervalSeconds = READING_INTERVAL;
 unsigned long lastSensorReadAt = 0;
@@ -332,6 +333,7 @@ String wifiStatusPage() {
   html += "<button type='submit'>Save ESP settings</button>";
   html += "</form>";
   html += "<a href='/events'>Events</a>";
+  html += "<a href='" + grafanaURL + "' target='_blank'>Grafana Dashboard</a>";
   html += "<form method='POST' action='/reset' onsubmit=\"return confirm('Reset all settings to defaults? This will overwrite saved Wi-Fi and AP settings. Continue?');\">";
   html += "<button type='submit' style='background:#dc2626'>Factory reset</button>";
   html += "</form>";
