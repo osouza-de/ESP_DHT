@@ -49,11 +49,13 @@ unsigned long currentReadingIntervalSeconds = READING_INTERVAL;
 unsigned long lastSensorReadAt = 0;
 bool factoryResetRequested = false;
 
-
-
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
 Point sensor("temperature_humidity");
 DHT dht(DHTPIN, DHTTYPE);
+
+float h = NAN;
+float t = NAN;
+float hic = NAN;
 
 void logOutput(const String& message, bool newline = true);
 
@@ -256,6 +258,12 @@ bool saveAllCredentials(const String& wifiSsid, const String& wifiPassword, cons
 String wifiStatusPage() {
   String html;
   html.reserve(1800);
+
+  time_t now = time(nullptr);
+  struct tm* timeInfo = localtime(&now);
+  char sensorTime[20];
+  strftime(sensorTime, sizeof(sensorTime), "%Y-%m-%d %H:%M:%S", timeInfo);
+
   String connectedSsid = WiFi.status() == WL_CONNECTED ? WiFi.SSID() : loadWifiCredentials().ssid;
   String apIpText = apModeActive ? WiFi.softAPIP().toString() : String("n/a");
   String staMac = WiFi.macAddress();
@@ -270,6 +278,13 @@ String wifiStatusPage() {
   html += "select,input,button,a{width:100%;padding:12px;margin:8px 0;box-sizing:border-box;border-radius:8px;border:1px solid #cbd5e1}";
   html += "button,a{display:block;text-align:center;text-decoration:none;background:#0f766e;color:#fff;border:none;font-weight:700}a{background:#334155}</style>";
   html += "</head><body><div class='card'><h1>ESP DHT Wi-Fi</h1>";
+
+  // Sensor status
+  html += "<hr><h2>Sensor status</h2>";
+  html += "<p>Time: " + String(sensorTime) + "</p>";
+  html += "<p>Humidity: " + String(h, 1) + "%</p>";
+  html += "<p>Temperature: " + String(t, 1) + "&#x2103;</p>";
+  html += "<p>Heat index: " + String(hic, 1) + "&#x2103;</p>";
 
   // WiFi Settings
   html += "<hr><h2>WiFi settings</h2>";
@@ -434,13 +449,13 @@ void setupWebServer() {
     wifiSaveRequested = true;
     apConfigUpdateRequested = true;
     apConfigUpdateAtMs = millis() + 1000;
-    request->send(200, "text/html", "<html><meta http-equiv='refresh' content='30; url=/'><body><h2>Saving and aplying settings. Redirecting to the main page...</h2></body></html>");
+    request->send(200, "text/html", "<html><meta http-equiv='refresh' content='10; url=/'><body><h2>Saving and aplying settings. Redirecting to the main page...</h2></body></html>");
   });
 
     server.on("/reset", HTTP_POST, [](AsyncWebServerRequest *request) {
       resetRuntimeConfigToDefaults();
       logOutput("Factory reset requested via web UI.");
-      request->send(200, "text/html", "<html><meta http-equiv='refresh' content='30; url=/'><body><h2>Resetting to defaults. Saving and redirecting...</h2></body></html>");
+      request->send(200, "text/html", "<html><meta http-equiv='refresh' content='10; url=/'><body><h2>Resetting to defaults. Saving and redirecting...</h2></body></html>");
     });
 
   server.onNotFound([](AsyncWebServerRequest *request) {
@@ -561,9 +576,9 @@ void loop() {
 
   sensor.clearFields();
 
-  float h = NAN;
-  float t = NAN;
-  float hic = NAN;
+  h = NAN;
+  t = NAN;
+  hic = NAN;
   bool sensorOk = false;
 
   for (int attempt = 0; attempt < 3; ++attempt) {
