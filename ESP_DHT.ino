@@ -16,8 +16,6 @@
 #define WIFI_CONNECT_TIMEOUT_MS_CUSTOM 15000
 #define TZ_INFO "<-03>3"
 
-
-
 ESP8266WiFiMulti wifiMulti;
 
 AsyncWebServer server(80);
@@ -58,26 +56,12 @@ Point sensor("temperature_humidity");
 DHT dht(DHTPIN, DHTTYPE);
 
 void logOutput(const String& message, bool newline = true);
-String buildLogsPage();
+
 // Offline buffering
 void storeOfflineData(float h, float t, float hic, time_t ts);
 void resendOfflineData();
 void resetRuntimeConfigToDefaults();
 
-void appendLogToBuffer(const String& line) {
-  const size_t maxLogBufferSize = 4096;
-  logBuffer += line;
-  logBuffer += "\n";
-
-  if (logBuffer.length() > maxLogBufferSize) {
-    int cutPos = logBuffer.indexOf('\n', logBuffer.length() - maxLogBufferSize / 2);
-    if (cutPos >= 0) {
-      logBuffer = logBuffer.substring(cutPos + 1);
-    } else {
-      logBuffer = logBuffer.substring(logBuffer.length() - maxLogBufferSize);
-    }
-  }
-}
 void performWifiScan(const String& selectedSsid) {
   ssidOptions = "";
   ssidOptions.reserve(1024);
@@ -332,27 +316,10 @@ String wifiStatusPage() {
   html += "<button type='submit'>Save ESP settings</button>";
   html += "</form>";
   html += "<a href='/events'>Events</a>";
-  html += "<a href='/logs'>Logs</a>";
   html += "<form method='POST' action='/reset' onsubmit=\"return confirm('Reset all settings to defaults? This will overwrite saved Wi-Fi and AP settings. Continue?');\">";
   html += "<button type='submit' style='background:#dc2626'>Factory reset</button>";
   html += "</form>";
   html += "</div></body></html>";
-  return html;
-}
-
-String buildLogsPage() {
-  String html;
-  html.reserve(2200);
-  html += "<!DOCTYPE html><html><head><meta charset='utf-8'>";
-  html += "<meta name='viewport' content='width=device-width,initial-scale=1'>";
-  html += "<title>ESP Logs</title>";
-  html += "<style>body{font-family:Arial,sans-serif;max-width:900px;margin:40px auto;padding:16px;background:#111827;color:#e5e7eb}";
-  html += ".card{background:#1f2937;border-radius:12px;padding:18px;box-shadow:0 8px 24px rgba(0,0,0,.3)}";
-  html += "pre{white-space:pre-wrap;word-wrap:break-word;background:#0b1220;padding:14px;border-radius:10px;overflow:auto;max-height:70vh}";
-  html += "a{display:inline-block;margin-bottom:12px;color:#93c5fd;text-decoration:none}</style>";
-  html += "</head><body><div class='card'><a href='/'>Voltar</a><h1>Logs</h1><pre>";
-  html += logBuffer.length() > 0 ? logBuffer : "Sem logs ainda.";
-  html += "</pre></div></body></html>";
   return html;
 }
 
@@ -400,10 +367,6 @@ void setupWebServer() {
 
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
     request->send(200, "text/html", wifiStatusPage());
-  });
-
-  server.on("/logs", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request->send(200, "text/html", buildLogsPage());
   });
 
   server.on("/rescan", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -525,7 +488,6 @@ void logOutput(const String& message, bool newline) {
   if (newline) Serial.println(logMessage);
   else Serial.print(logMessage);
 
-  appendLogToBuffer(logMessage);
   events.send(logMessage.c_str(), "message");
 }
 
