@@ -12,6 +12,7 @@
 #define DHTPIN 2
 #define DELAY_INTERVAL_MS 1000 // Loop interval in ms
 // #define READING_INTERVAL 5 * 60  // Intervalo entre leituras (segundos)
+#define MAX_ERRORS 4 // Maximum ammount of errors to trigger reset
 #define READING_INTERVAL 10
 #define WIFI_CONNECT_TIMEOUT_MS_CUSTOM 15000
 #define WIFI_CONFIG_FILE "/wifi.txt"
@@ -50,6 +51,7 @@ bool apModeEnabled = true;
 unsigned long currentReadingIntervalSeconds = READING_INTERVAL;
 unsigned long lastSensorReadAt = 0;
 bool factoryResetRequested = false;
+int error_count = 0;
 
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
 Point sensor("temperature_humidity");
@@ -209,6 +211,7 @@ bool saveWifiCredentials(const String& ssid, const String& password) {
 
   if (!ok) {
     logOutput("Falha ao salvar configuracao Wi-Fi apos " + String(maxTries) + " tentativas.");
+    error_count++;
   } else {
     logOutput("Configuracao Wi-Fi salva.");
   }
@@ -598,6 +601,7 @@ void loop() {
 
   if (!sensorOk) {
     logOutput("Erro ao ler sensor (h=" + String(h) + ", t=" + String(t) + ").");
+    error_count++;
   } else {
     sensor.addField("h", h);
     sensor.addField("t", t);
@@ -644,10 +648,12 @@ void loop() {
     // Require a valid timestamp before storing data
     if (now <= 1700000000) {
       logOutput("Sem horario valido; dados nao serao armazenados.");
+      error_count++;
     } else {
       if (!client.writePoint(sensor)) {  // Envio correto com timestamp
         logOutput("InfluxDB error: " + client.getLastErrorMessage());
         storeOfflineData(h, t, hic, now);
+        error_count++;
       } else {
         logOutput("Dados enviados com sucesso.");
       }
@@ -656,6 +662,12 @@ void loop() {
 
   unsigned long intervalMs = currentReadingIntervalSeconds * 1000UL;
   delay(intervalMs);
+
+  if (error_count > MAX_ERRORS) {
+    logOutput("Too many errors (" + String(error_count) + "/" + MAX_ERRORS + "). Rebooting.");
+    error_count = 0;
+    ESP.restart();
+  }
 }
 
 void resetRuntimeConfigToDefaults() {
