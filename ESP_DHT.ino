@@ -148,77 +148,6 @@ void loadApCredentials() {
   }
 }
 
-bool saveWifiCredentials(const String& ssid, const String& password) {
-  const int maxTries = 3;
-  int tryCount = 0;
-  bool ok = false;
-  bool didFormat = false;
-
-  while (tryCount < maxTries && !ok) {
-    logOutput("Heap livre antes de salvar: " + String(ESP.getFreeHeap()));
-
-    File file = SPIFFS.open(WIFI_CONFIG_FILE, "w");
-    if (!file) {
-      tryCount++;
-      logOutput("Tentativa " + String(tryCount) + ": Falha ao abrir arquivo de configuracao Wi-Fi.");
-
-      if (!didFormat) {
-        logOutput("Tentando formatar SPIFFS e salvar novamente.");
-        didFormat = true;
-        SPIFFS.format();
-      }
-
-      delay(200);
-      continue;
-    }
-
-    if (file.print(ssid) < 0) {
-      logOutput("Erro escrevendo SSID no arquivo.");
-      file.close();
-      tryCount++;
-      delay(200);
-      continue;
-    }
-
-    if (file.print("\n") < 0) {
-      logOutput("Erro escrevendo nova linha depois do SSID.");
-      file.close();
-      tryCount++;
-      delay(200);
-      continue;
-    }
-
-    if (file.print(password) < 0) {
-      logOutput("Erro escrevendo senha no arquivo.");
-      file.close();
-      tryCount++;
-      delay(200);
-      continue;
-    }
-
-    if (file.print("\n") < 0) {
-      logOutput("Erro escrevendo nova linha depois da senha.");
-      file.close();
-      tryCount++;
-      delay(200);
-      continue;
-    }
-
-    file.close();
-    ok = true;
-    logOutput("Heap livre apos salvar: " + String(ESP.getFreeHeap()));
-  }
-
-  if (!ok) {
-    logOutput("Falha ao salvar configuracao Wi-Fi apos " + String(maxTries) + " tentativas.");
-    error_count++;
-  } else {
-    logOutput("Configuracao Wi-Fi salva.");
-  }
-
-  return ok;
-}
-
 bool saveAllCredentials(const String& wifiSsid, const String& wifiPassword, const String& apSsid, const String& apPassword, bool enableApMode, unsigned long readingIntervalSeconds) {
   const int maxTries = 3;
   int tryCount = 0;
@@ -587,6 +516,7 @@ void loop() {
   hic = NAN;
   bool sensorOk = false;
 
+  // Try to read the DHT sensor three times
   for (int attempt = 0; attempt < 3; ++attempt) {
     delay(250);
     h = dht.readHumidity();
@@ -663,7 +593,7 @@ void loop() {
   unsigned long intervalMs = currentReadingIntervalSeconds * 1000UL;
   delay(intervalMs);
 
-  if (error_count > MAX_ERRORS) {
+  if (error_count >= MAX_ERRORS) {
     logOutput("Too many errors (" + String(error_count) + "/" + MAX_ERRORS + "). Rebooting.");
     error_count = 0;
     ESP.restart();
