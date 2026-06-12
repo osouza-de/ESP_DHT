@@ -64,8 +64,8 @@ float hic = NAN;
 void logOutput(const String& message, bool newline = true);
 
 // Offline buffering
-void storeOfflineData(float h, float t, float hic, time_t ts);
-void resendOfflineData();
+// void storeOfflineData(float h, float t, float hic, time_t ts);
+// void resendOfflineData();
 void resetRuntimeConfigToDefaults();
 
 void performWifiScan(const String& selectedSsid) {
@@ -413,11 +413,11 @@ void handleWifiConnected() {
   } else {
     logOutput("Erro InfluxDB: " + client.getLastErrorMessage());
   }
-  // Attempt to resend any offline-stored measurements now that we're connected
-  time_t now = time(nullptr);
-  if (now > 1700000000) {
-    resendOfflineData();
-  }
+  // // Attempt to resend any offline-stored measurements now that we're connected
+  // time_t now = time(nullptr);
+  // if (now > 1700000000) {
+  //   resendOfflineData();
+  // }
 }
 
 void logOutput(const String& message, bool newline) {
@@ -553,9 +553,9 @@ void loop() {
       logOutput("Wi-Fi reconectado. IP: " + WiFi.localIP().toString());
       performWifiScan(WiFi.SSID());
       handleWifiConnected();
-      // Try resending any buffered offline data
-      time_t now = time(nullptr);
-      if (now > 1700000000) resendOfflineData();
+      // // Try resending any buffered offline data
+      // time_t now = time(nullptr);
+      // if (now > 1700000000) resendOfflineData();
     }
   }
 
@@ -580,12 +580,13 @@ void loop() {
       logOutput("Sem horario valido; dados nao serao armazenados.");
       error_count++;
     } else {
-      if (!client.writePoint(sensor)) {  // Envio correto com timestamp
-        logOutput("InfluxDB error: " + client.getLastErrorMessage());
-        storeOfflineData(h, t, hic, now);
-        error_count++;
-      } else {
+      // Try to send data to InfluxDB
+      if (client.writePoint(sensor)) {
         logOutput("Dados enviados com sucesso.");
+        error_count = 0;
+      } else {
+        logOutput("InfluxDB error: " + client.getLastErrorMessage());
+        error_count++;
       }
     }
   }
@@ -619,95 +620,5 @@ void resetRuntimeConfigToDefaults() {
   if (apModeActive) {
     WiFi.softAPdisconnect(true);
     apModeActive = false;
-  }
-}
-
-void storeOfflineData(float h, float t, float hic, time_t ts) {
-  File file = SPIFFS.open("/offline.csv", "a");
-  if (!file) {
-    logOutput("Falha ao abrir arquivo offline para gravacao.");
-    return;
-  }
-
-  file.print(String((long)ts));
-  file.print(",");
-  file.print(String(h, 2));
-  file.print(",");
-  file.print(String(t, 2));
-  file.print(",");
-  file.println(String(hic, 2));
-  file.close();
-
-  logOutput("Dados armazenados offline.");
-}
-
-void resendOfflineData() {
-  if (!SPIFFS.exists("/offline.csv")) {
-    return;
-  }
-
-  File input = SPIFFS.open("/offline.csv", "r");
-  if (!input) {
-    logOutput("Falha ao abrir arquivo offline para leitura.");
-    return;
-  }
-
-  File output = SPIFFS.open("/offline.tmp", "w");
-  if (!output) {
-    logOutput("Falha ao criar arquivo temporario de reenvio.");
-    input.close();
-    return;
-  }
-
-  bool keptAny = false;
-
-  while (input.available()) {
-    String line = input.readStringUntil('\n');
-    line.trim();
-    if (line.isEmpty()) {
-      continue;
-    }
-
-    int firstComma = line.indexOf(',');
-    int secondComma = line.indexOf(',', firstComma + 1);
-    int thirdComma = line.indexOf(',', secondComma + 1);
-    if (firstComma < 0 || secondComma < 0 || thirdComma < 0) {
-      continue;
-    }
-
-    float h = line.substring(firstComma + 1, secondComma).toFloat();
-    float t = line.substring(secondComma + 1, thirdComma).toFloat();
-    float hic = line.substring(thirdComma + 1).toFloat();
-
-    Point offlinePoint("temperature_humidity");
-    offlinePoint.addTag("device", DEVICE);
-    offlinePoint.addField("h", h);
-    offlinePoint.addField("t", t);
-    offlinePoint.addField("hic", hic);
-
-    if (!client.writePoint(offlinePoint)) {
-      output.println(line);
-      keptAny = true;
-      while (input.available()) {
-        String remaining = input.readStringUntil('\n');
-        remaining.trim();
-        if (remaining.length() > 0) {
-          output.println(remaining);
-        }
-      }
-      break;
-    }
-  }
-
-  input.close();
-  output.close();
-
-  SPIFFS.remove("/offline.csv");
-  if (keptAny) {
-    SPIFFS.rename("/offline.tmp", "/offline.csv");
-    logOutput("Alguns dados ainda aguardam reenvio.");
-  } else {
-    SPIFFS.remove("/offline.tmp");
-    logOutput("Fila offline reenviada com sucesso.");
   }
 }
