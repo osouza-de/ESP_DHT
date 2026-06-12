@@ -148,7 +148,7 @@ void loadApCredentials() {
   }
 }
 
-bool saveAllCredentials(const String& wifiSsid, const String& wifiPassword, const String& apSsid, const String& apPassword, bool enableApMode, unsigned long readingIntervalSeconds) {
+bool saveAllCredentials(const String& wifiSsid, const String& wifiPassword, const String& apSsid, const String& apPassword, unsigned long readingIntervalSeconds) {
   const int maxTries = 3;
   int tryCount = 0;
   bool ok = false;
@@ -174,16 +174,15 @@ bool saveAllCredentials(const String& wifiSsid, const String& wifiPassword, cons
     file.println(wifiPassword);
     file.println(apSsid);
     file.println(apPassword);
-    file.println(enableApMode ? "1" : "0");
     file.println(String(readingIntervalSeconds));
     file.close();
     ok = true;
   }
 
   if (!ok) {
-    logOutput("Falha ao salvar configuracao AP apos " + String(maxTries) + " tentativas.");
+    logOutput("AP settings save failed after " + String(maxTries) + " tries.");
   } else {
-    logOutput("Configuracao AP salva.");
+    logOutput("AP settings saved succesfully.");
   }
 
   return ok;
@@ -251,9 +250,6 @@ String wifiStatusPage() {
   html += "<form method='POST' action='/save'>";
   html += "<label>SSID</label><input name='ap_ssid' maxlength='32' value='" + currentApSsid + "'>";
   html += "<label>Password</label><input name='ap_password' type='password' maxlength='64' value='" + currentApPassword + "'>";
-  html += "<label><input type='checkbox' name='ap_mode' value='1'";
-  html += apModeEnabled ? " checked" : "";
-  html += "> Active</label>";
   html += "<button type='submit'>Save AP settings</button>";
   html += "</form>";
 
@@ -289,21 +285,11 @@ bool connectToWifi(const String& ssid, const String& password, unsigned long tim
 }
 
 void startConfigPortal(bool force = false) {
-  if (!force && !apModeEnabled) {
-    return;
-  }
-
-  if (apModeActive) {
-    performWifiScan(WiFi.status() == WL_CONNECTED ? WiFi.SSID() : loadWifiCredentials().ssid);
-    return;
-  }
-
   WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(currentApSsid.c_str(), currentApPassword.c_str());
 
   IPAddress apIP = WiFi.softAPIP();
   dnsServer.start(53, "*", apIP);
-  apModeActive = true;
 
   // Pre-scan available networks and cache options to avoid scanning inside the web handler
   performWifiScan(WiFi.status() == WL_CONNECTED ? WiFi.SSID() : loadWifiCredentials().ssid);
@@ -327,7 +313,6 @@ void setupWebServer() {
   server.on("/save", HTTP_POST, [](AsyncWebServerRequest *request) {
     String apSsid = currentApSsid;
     String apPassword = currentApPassword;
-    bool enableApMode = apModeEnabled;
     unsigned long readingIntervalSeconds = currentReadingIntervalSeconds;
 
     WifiCredentials storedWifi = loadWifiCredentials();
@@ -359,8 +344,6 @@ void setupWebServer() {
       }
     }
 
-    enableApMode = request->hasParam("ap_mode", true);
-
     ssid.trim();
     password.trim();
     apSsid.trim();
@@ -379,7 +362,6 @@ void setupWebServer() {
     pendingWifiPassword = password;
     currentApSsid = apSsid;
     currentApPassword = apPassword;
-    apModeEnabled = enableApMode;
     currentReadingIntervalSeconds = readingIntervalSeconds;
     wifiSaveRequested = true;
     apConfigUpdateRequested = true;
@@ -394,11 +376,6 @@ void setupWebServer() {
     });
 
   server.onNotFound([](AsyncWebServerRequest *request) {
-    if (apModeActive) {
-      request->redirect("/");
-      return;
-    }
-
     request->send(404, "text/plain", "Not found");
   });
 
@@ -458,9 +435,8 @@ void setup() {
 
   loadApCredentials();
 
-  if (apModeEnabled) {
-    startConfigPortal();
-  }
+  startConfigPortal();
+  
 
   WifiCredentials credentials = loadWifiCredentials();
   if (connectToWifi(credentials.ssid, credentials.password, WIFI_CONNECT_TIMEOUT_MS_CUSTOM)) {
@@ -469,7 +445,6 @@ void setup() {
     handleWifiConnected();
   } else {
     logOutput("Falha na conexao. Iniciando portal de configuracao.");
-    startConfigPortal(true);
   }
 
   sensor.addTag("device", DEVICE);
@@ -484,14 +459,12 @@ void loop() {
   if (wifiSaveRequested) {
     wifiSaveRequested = false;
 
-    if (saveAllCredentials(pendingWifiSsid, pendingWifiPassword, currentApSsid, currentApPassword, apModeEnabled, currentReadingIntervalSeconds)) {
+    if (saveAllCredentials(pendingWifiSsid, pendingWifiPassword, currentApSsid, currentApPassword, currentReadingIntervalSeconds)) {
       wifiReconnectScheduled = true;
       wifiReconnectAtMs = millis() + 3000;
     } else {
       logOutput("Configuracao nao foi salva; permanecendo no portal.");
-      if (!apModeActive) {
-        startConfigPortal();
-      }
+      startConfigPortal();      
     }
 
     pendingWifiSsid = "";
@@ -500,13 +473,8 @@ void loop() {
 
   if (apConfigUpdateRequested && millis() >= apConfigUpdateAtMs) {
     apConfigUpdateRequested = false;
-    if (apModeActive) {
-      WiFi.softAPdisconnect(true);
-      apModeActive = false;
-    }
-    if (apModeEnabled) {
-      startConfigPortal(true);
-    }
+    startConfigPortal(true);
+    
   }
 
   sensor.clearFields();
