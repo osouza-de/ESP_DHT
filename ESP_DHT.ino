@@ -369,11 +369,11 @@ void setupWebServer() {
     request->send(200, "text/html", "<html><meta http-equiv='refresh' content='10; url=/'><body><h2>Saving and aplying settings. Redirecting to the main page...</h2></body></html>");
   });
 
-    server.on("/reset", HTTP_POST, [](AsyncWebServerRequest *request) {
-      resetRuntimeConfigToDefaults();
-      logOutput("Factory reset requested via web UI.");
-      request->send(200, "text/html", "<html><meta http-equiv='refresh' content='10; url=/'><body><h2>Resetting to defaults. Saving and redirecting...</h2></body></html>");
-    });
+  server.on("/reset", HTTP_POST, [](AsyncWebServerRequest *request) {
+    resetRuntimeConfigToDefaults();
+    logOutput("Factory reset requested via web UI.");
+    request->send(200, "text/html", "<html><meta http-equiv='refresh' content='10; url=/'><body><h2>Resetting to defaults. Saving and redirecting...</h2></body></html>");
+  });
 
   server.onNotFound([](AsyncWebServerRequest *request) {
     request->send(404, "text/plain", "Not found");
@@ -386,9 +386,9 @@ void handleWifiConnected() {
   timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
 
   if (client.validateConnection()) {
-    logOutput("Conectado ao InfluxDB.");
+    logOutput("InfluxDB connected.");
   } else {
-    logOutput("Erro InfluxDB: " + client.getLastErrorMessage());
+    logOutput("InfluxDB error: " + client.getLastErrorMessage());
   }
   // // Attempt to resend any offline-stored measurements now that we're connected
   // time_t now = time(nullptr);
@@ -430,8 +430,8 @@ void setup() {
 
   setupWebServer();
 
-  logOutput("MAC Wi-Fi: " + WiFi.macAddress());
-  logOutput("Conectando ao Wi-Fi...");
+  logOutput("Wi-Fi MAC: " + WiFi.macAddress());
+  logOutput("Wi-Fi connecting...");
 
   loadApCredentials();
 
@@ -440,11 +440,11 @@ void setup() {
 
   WifiCredentials credentials = loadWifiCredentials();
   if (connectToWifi(credentials.ssid, credentials.password, WIFI_CONNECT_TIMEOUT_MS_CUSTOM)) {
-    logOutput("Conectado ao SSID '" + WiFi.SSID() + "'! IP: " + WiFi.localIP().toString());
+    logOutput("Wi-Fi connected. SSID: '" + WiFi.SSID() + "' | IP: " + WiFi.localIP().toString());
     performWifiScan(WiFi.SSID());
     handleWifiConnected();
   } else {
-    logOutput("Falha na conexao. Iniciando portal de configuracao.");
+    logOutput("Wi-Fi connection error.");
   }
 
   sensor.addTag("device", DEVICE);
@@ -498,14 +498,14 @@ void loop() {
   }
 
   if (!sensorOk) {
-    logOutput("Erro ao ler sensor (h=" + String(h) + ", t=" + String(t) + ").");
+    logOutput("Sensor reading error: (h=" + String(h) + ", t=" + String(t) + ").");
     error_count++;
   } else {
     sensor.addField("h", h);
     sensor.addField("t", t);
     sensor.addField("hic", hic);
 
-    logOutput("Sending: h=" + String(h) + " t=" + String(t) + " hic=" + String(hic));
+    logOutput("Sensor read: h=" + String(h) + " t=" + String(t) + " hic=" + String(hic));
   }
 
   if (wifiReconnectScheduled && millis() >= wifiReconnectAtMs && WiFi.status() != WL_CONNECTED) {
@@ -513,12 +513,12 @@ void loop() {
 
     WifiCredentials credentials = loadWifiCredentials();
     if (!connectToWifi(credentials.ssid, credentials.password, WIFI_CONNECT_TIMEOUT_MS_CUSTOM)) {
-      logOutput("Ainda no portal de configuracao enquanto tenta conectar ao novo Wi-Fi.");
+      logOutput("Still at the setup portal while trying to connect to the new WiFi.");
       if (apModeEnabled) {
         startConfigPortal(true);
       }
     } else {
-      logOutput("Wi-Fi reconectado. IP: " + WiFi.localIP().toString());
+      logOutput("Wi-Fi reconnected. IP: " + WiFi.localIP().toString());
       performWifiScan(WiFi.SSID());
       handleWifiConnected();
       // // Try resending any buffered offline data
@@ -527,6 +527,7 @@ void loop() {
     }
   }
 
+  // Sensor OK but no internet
   if (sensorOk && WiFi.status() != WL_CONNECTED) {
     if (!apModeActive && millis() - lastWifiReconnectAttempt > wifiReconnectIntervalMs) {
       lastWifiReconnectAttempt = millis();
@@ -534,23 +535,24 @@ void loop() {
       if (!connectToWifi(credentials.ssid, credentials.password, WIFI_CONNECT_TIMEOUT_MS_CUSTOM)) {
         startConfigPortal(true);
       } else {
-        logOutput("Wi-Fi reconectado. IP: " + WiFi.localIP().toString());
+        logOutput("Wi-Fi reconnected. IP: " + WiFi.localIP().toString());
         performWifiScan(WiFi.SSID());
         handleWifiConnected();
       }
     }
 
-    logOutput("Wi-Fi indisponivel. Dados nao serao armazenados sem horario valido.");
+    logOutput("Wi-Fi unavailable. Data will not be stored.");
+    error_count++;
   } else if (sensorOk) {
     time_t now = time(nullptr);
     // Require a valid timestamp before storing data
     if (now <= 1700000000) {
-      logOutput("Sem horario valido; dados nao serao armazenados.");
+      logOutput("Timestamp unavailable. Data will not be stored.");
       error_count++;
     } else {
       // Try to send data to InfluxDB
       if (client.writePoint(sensor)) {
-        logOutput("Dados enviados com sucesso.");
+        logOutput("Data sucessfully sent.");
         error_count = 0;
       } else {
         logOutput("InfluxDB error: " + client.getLastErrorMessage());
@@ -559,16 +561,18 @@ void loop() {
     }
   }
 
-  unsigned long intervalMs = currentReadingIntervalSeconds * 1000UL;
-  delay(intervalMs);
-
   if (error_count >= MAX_ERRORS) {
     logOutput("Too many errors (" + String(error_count) + "/" + MAX_ERRORS + "). Rebooting.");
     error_count = 0;
     ESP.restart();
   }
+
+  unsigned long intervalMs = currentReadingIntervalSeconds * 1000UL;
+  delay(intervalMs);
 }
 
+
+// TODO: is it working?
 void resetRuntimeConfigToDefaults() {
   pendingWifiSsid = String(WIFI_SSID);
   pendingWifiPassword = String(WIFI_PASSWORD);
@@ -585,8 +589,6 @@ void resetRuntimeConfigToDefaults() {
   lastWifiReconnectAttempt = 0;
   lastSensorReadAt = 0;
 
-  if (apModeActive) {
-    WiFi.softAPdisconnect(true);
-    apModeActive = false;
-  }
+  delay(1000);
+  ESP.restart();
 }
